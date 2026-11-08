@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Home SCADA | ESP32</title>
+<style>
+:root{--bg:#0b1220;--panel:#121d30;--panel2:#17243a;--line:#263650;--text:#e8eef8;--muted:#91a2bb;--blue:#5b9cff;--green:#31c48d;--red:#f36b75;--amber:#f5b84b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0%,#162746 0,#0b1220 42%);color:var(--text);font:15px/1.45 Inter,Segoe UI,Arial,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 4vw;border-bottom:1px solid var(--line);background:#0b1220cc;position:sticky;top:0;z-index:5;backdrop-filter:blur(12px)}
+.brand{display:flex;gap:12px;align-items:center}.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#4e9cff,#6d6bff);display:grid;place-items:center;font-size:22px}.brand h1{font-size:18px;margin:0}.brand small{color:var(--muted)}
+.status{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:50%;background:var(--red)}.dot.online{background:var(--green);box-shadow:0 0 12px #31c48d88}
+main{max-width:1400px;margin:26px auto;padding:0 24px 40px}.top{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin-bottom:18px}
+.panel,.metric,.system{background:linear-gradient(160deg,#17243a,#111b2c);border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 30px #0002}
+.panel{padding:20px}.modebar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}.modebar h2{margin:0 0 4px;font-size:17px}.muted{color:var(--muted);font-size:13px}
+.switch{display:flex;background:#0b1424;padding:5px;border-radius:13px;border:1px solid var(--line);gap:5px}.switch button{border:0;border-radius:9px;padding:10px 18px;color:var(--muted);background:transparent;font-weight:700;cursor:pointer}.switch button.active{background:var(--blue);color:white}
+.modehint{margin-top:14px;padding:11px 13px;border-radius:11px;background:#0d192b;color:#b7c7dd;font-size:13px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.metric{padding:17px}.metric .label{color:var(--muted);font-size:13px}.metric .value{font-size:28px;font-weight:750;margin:7px 0 2px}.metric .unit{font-size:13px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.system{padding:18px;min-height:180px}.syshead{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.syshead h3{margin:0;font-size:15px}.ico{width:34px;height:34px;border-radius:10px;background:#243651;display:grid;place-items:center;font-size:18px}.reading{font-size:22px;font-weight:700}.state{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 9px;border-radius:20px;background:#26354b;color:#b8c9df}.state.on{background:#123c36;color:#71e1b8}.state.warn{background:#49351d;color:#ffd17a}.state.alert{background:#48252e;color:#ff9aa2}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.btn{border:1px solid var(--line);background:#20314a;color:var(--text);border-radius:9px;padding:8px 12px;cursor:pointer;font-weight:600}.btn:hover{border-color:var(--blue)}.btn.primary{background:#2868bd;border-color:#2868bd}.btn.danger{background:#682e38;border-color:#82404b}.btn:disabled{opacity:.35;cursor:not-allowed}
+input[type=range]{width:100%;accent-color:var(--blue);margin-top:12px}.range-label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:8px}
+footer{color:var(--muted);text-align:center;font-size:12px;margin-top:24px}
+@media(max-width:900px){.metrics{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:repeat(2,1fr)}.top{grid-template-columns:1fr}}
+@media(max-width:600px){header{padding:15px}.status{display:none}main{padding:0 14px 30px}.metrics,.grid{grid-template-columns:1fr 1fr}.metric .value{font-size:23px}.system{padding:14px}.brand h1{font-size:16px}}
+</style>
+</head>
+<body>
+<header>
+ <div class="brand"><div class="logo">⌂</div><div><h1>SMART HOME SCADA</h1><small>ESP32 · Hệ thống giám sát và điều khiển</small></div></div>
+ <div class="status"><span class="dot" id="dot"></span><span id="connection">Đang chờ ESP32</span><span>•</span><span id="updated">Chưa có dữ liệu</span></div>
+</header>
+<main>
+ <section class="top">
+  <div class="panel">
+   <div class="modebar"><div><h2>Chế độ vận hành</h2><div class="muted">Chọn cách điều khiển các thiết bị trong nhà</div></div>
+    <div class="switch"><button id="autoBtn" class="active" onclick="setMode('AUTO')">AUTO</button><button id="manualBtn" onclick="setMode('MANUAL')">MANUAL</button></div>
+   </div>
+   <div class="modehint" id="modeHint">AUTO: ESP32 tự điều khiển theo cảm biến. Cảnh báo khí gas luôn được ưu tiên.</div>
+  </div>
+  <div class="panel">
+   <h2 style="margin:0 0 8px;font-size:17px">Trạng thái an toàn</h2>
+   <div id="gasBanner" class="state">Đang chờ dữ liệu MQ-2</div>
+   <p class="muted" style="margin:12px 0 0">Ngưỡng cảnh báo khí gas: <b>1800</b> (giá trị ADC theo cấu hình hiện tại).</p>
+  </div>
+ </section>
+
+ <section class="metrics">
+  <div class="metric"><div class="label">Nhiệt độ</div><div class="value" id="temp">--</div><div class="unit">°C · DHT22</div></div>
+  <div class="metric"><div class="label">Độ ẩm không khí</div><div class="value" id="hum">--</div><div class="unit">%RH · DHT22</div></div>
+  <div class="metric"><div class="label">Độ ẩm đất</div><div class="value" id="soil">--</div><div class="unit">% · Cảm biến điện dung</div></div>
+  <div class="metric"><div class="label">Giá trị MQ-2</div><div class="value" id="gas">--</div><div class="unit">ADC · Cảm biến khí gas</div></div>
+ </section>
+
+ <section class="grid">
+  <article class="system">
+   <div class="syshead"><h3>🌱 Tưới cây tự động</h3><span class="ico">💧</span></div>
+   <div class="reading" id="pumpState">--</div><div class="muted">Bơm bật khi độ ẩm đất dưới 30% trong AUTO.</div>
+   <div class="controls"><button class="btn primary manual-control" onclick="send({pump:true})">Bật bơm</button><button class="btn manual-control" onclick="send({pump:false})">Tắt bơm</button></div>
+  </article>
+  <article class="system">
+   <div class="syshead"><h3>🌡️ Điều khiển quạt</h3><span class="ico">🌀</span></div>
+   <div class="reading" id="fanState">--</div><div class="muted">Bật ≥ 35°C · Tắt ≤ 33°C.</div>
+   <div class="controls"><button class="btn primary manual-control" onclick="send({fan:true})">Bật quạt</button><button class="btn manual-control" onclick="send({fan:false})">Tắt quạt</button></div>
+  </article>
+  <article class="system">
+   <div class="syshead"><h3>🔥 Cảnh báo khí gas</h3><span class="ico">🚨</span></div>
+   <div class="reading" id="buzzerState">--</div><div class="muted">Buzzer tự kích hoạt khi MQ-2 ≥ 1800, ưu tiên an toàn ở cả hai chế độ.</div>
+  </article>
+  <article class="system">
+   <div class="syshead"><h3>🚶 Phát hiện chuyển động</h3><span class="ico">💡</span></div>
+   <div class="reading" id="motionState">--</div><div class="muted">PIR phát hiện chuyển động; đèn giữ sáng 3 giây sau lần phát hiện cuối.</div>
+   <div class="controls"><button class="btn primary manual-control" onclick="send({led:true})">Bật đèn</button><button class="btn manual-control" onclick="send({led:false})">Tắt đèn</button></div>
+  </article>
+  <article class="system">
+   <div class="syshead"><h3>🌧️ Giàn phơi tự động</h3><span class="ico">🧺</span></div>
+   <div class="reading" id="rainState">--</div><div class="muted">Có mưa: servo về 180° · Không mưa: servo về 0°.</div>
+   <div class="range-label"><span>Góc servo</span><b id="angleLabel">0°</b></div><input id="angle" type="range" min="0" max="180" value="0" oninput="angleLabel.textContent=this.value+'°'" />
+   <div class="controls"><button class="btn manual-control" onclick="send({rain_servo_angle:Number(angle.value)})">Áp dụng góc</button></div>
+  </article>
+  <article class="system">
+   <div class="syshead"><h3>🔐 Cửa tự động RFID</h3><span class="ico">🚪</span></div>
+   <div class="reading" id="doorState">ĐÓNG</div><div class="muted">AUTO: mở bằng thẻ RFID hợp lệ. MANUAL: có thể mở cửa từ web.</div>
+   <div class="controls"><button class="btn primary manual-control" onclick="send({door_open:true})">Mở cửa 3 giây</button></div>
+  </article>
+ </section>
+ <footer>ESP32 Smart Home SCADA · FastAPI · MicroPython · Dữ liệu cập nhật định kỳ</footer>
+</main>
+<script>
+let currentMode='AUTO';
+async function send(payload){
+ if(currentMode==='AUTO' && Object.keys(payload).some(k=>k!=='mode')){alert('Chuyển sang MANUAL để điều khiển thiết bị bằng web.');return;}
+ try{const r=await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!r.ok)throw new Error('HTTP '+r.status);}catch(e){alert('Không gửi được lệnh: '+e.message);}
+}
+async function setMode(mode){
+ currentMode=mode;
+ document.getElementById('autoBtn').classList.toggle('active',mode==='AUTO');
+ document.getElementById('manualBtn').classList.toggle('active',mode==='MANUAL');
+ document.getElementById('modeHint').textContent=mode==='AUTO'?'AUTO: ESP32 tự điều khiển theo cảm biến. Cảnh báo khí gas luôn được ưu tiên.':'MANUAL: điều khiển bơm, quạt, đèn, góc giàn phơi và cửa từ web. Cảnh báo khí gas vẫn tự động.';
+ document.querySelectorAll('.manual-control').forEach(b=>b.disabled=mode!=='MANUAL');
+ await send({mode});
+}
+function setText(id,value){document.getElementById(id).textContent=value;}
+function stateText(on){return on?'ĐANG BẬT':'ĐANG TẮT';}
+async function refresh(){
+ try{
+  const r=await fetch('/api/state',{cache:'no-store'});const s=await r.json();
+  const online=s.online && s.last_seen && (Date.now()-new Date(s.last_seen).getTime()<7000);
+  document.getElementById('dot').classList.toggle('online',online);
+  setText('connection',online?'ESP32 đang kết nối':'ESP32 ngoại tuyến');
+  setText('updated',s.last_seen?'Cập nhật '+new Date(s.last_seen).toLocaleTimeString():'Chưa có dữ liệu');
+  if(s.mode && s.mode!==currentMode){currentMode=s.mode;document.getElementById('autoBtn').classList.toggle('active',currentMode==='AUTO');document.getElementById('manualBtn').classList.toggle('active',currentMode==='MANUAL');document.querySelectorAll('.manual-control').forEach(b=>b.disabled=currentMode!=='MANUAL');}
+  setText('temp',s.temperature==null?'--':Number(s.temperature).toFixed(1));
+  setText('hum',s.humidity==null?'--':Number(s.humidity).toFixed(1));
+  setText('soil',s.soil_moisture==null?'--':s.soil_moisture);
+  setText('gas',s.gas_value==null?'--':s.gas_value);
+  setText('pumpState',s.pump===undefined?'--':stateText(s.pump));
+  setText('fanState',s.fan===undefined?'--':stateText(s.fan));
+  setText('buzzerState',s.buzzer===undefined?'--':stateText(s.buzzer));
+  setText('motionState',s.motion?'CÓ CHUYỂN ĐỘNG':'KHÔNG PHÁT HIỆN');
+  setText('rainState',s.rain?'ĐANG MƯA':'KHÔNG MƯA');
+  setText('doorState',s.door==='OPEN'?'ĐANG MỞ':'ĐÓNG');
+  setText('angleLabel',(s.rain_servo_angle??0)+'°');
+  document.getElementById('angle').value=s.rain_servo_angle??0;
+  const banner=document.getElementById('gasBanner');
+  banner.textContent=s.gas_alarm?'⚠ CẢNH BÁO: PHÁT HIỆN KHÍ GAS':'✓ Môi trường bình thường';
+  banner.className='state '+(s.gas_alarm?'alert':'on');
+ }catch(e){setText('connection','Không kết nối được máy chủ');document.getElementById('dot').classList.remove('online');}
+}
+setMode('AUTO');setInterval(refresh,1000);refresh();
+</script>
+</body></html>
